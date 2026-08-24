@@ -1,0 +1,1 @@
+import e from"./files-file-list.ok.js";export default{tag:"files-path-panel",props:["path"],dependencies:[e],context:e=>({get path(){return e.$attr.path??"/"},onRefresh(){e.$dispatch("refresh")}}),template:'\n<div style="display:flex; flex-direction:column; gap:0; height:100%; min-height:0;">\n  <files-file-list :path="path" @refresh="onRefresh()" />\n</div>'};

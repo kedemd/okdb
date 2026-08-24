@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<!--
+  Standalone smoke-test for ok-json-input schema-driven completions.
+
+  ROOT CAUSE of invisible labels (type-viewer):
+    Monaco's fixedOverflowWidgets:true moves the suggest/hover widgets to
+    <body> inside a SEPARATE .monaco-editor.vs-dark container.  Monaco sets
+    its colour palette as INLINE custom-properties on the MAIN editor element
+    only — the overflow container never gets them.  Every var(--vscode-…)
+    inside the widget therefore falls back to `initial` (black text on dark
+    background → invisible).
+
+  FIX:
+    Declare the same custom-properties in a stylesheet rule that targets
+    .monaco-editor.vs-dark so they cascade into the overflow container.
+    See the <style> block below — the identical block is in styles.css for
+    the real admin app.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ok-json-input — completion test</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "@toolkit/": "./vendor/okjs/toolkit/",
+        "@okjs": "./vendor/okjs/ok.esm.min.js"
+      }
+    }
+  </script>
+  <style>
+    /* ── page chrome ────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #161c20;
+      color: #d0d8e0;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    h2 { margin: 0 0 4px; font-size: 15px; color: #e0eaf4; }
+    p  { margin: 0 0 12px; opacity: .55; font-size: 12px; }
+
+    .card {
+      background: #1a2228;
+      border: 1px solid #23292e;
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      opacity: .5;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .result {
+      margin-top: 10px;
+      background: #0d1318;
+      border: 1px solid #1e2e3e;
+      border-radius: 7px;
+      padding: 8px 12px;
+      font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+      font-size: 12px;
+      color: #4FC1FF;
+      min-height: 24px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-ok  { background: #0d2e1a; color: #3dbb6a; border: 1px solid #1e4a2a; }
+    .badge-err { background: #2e0d0d; color: #bb3d3d; border: 1px solid #4a1e1e; }
+
+    /* ── Monaco overflow widget fix ─────────────────────────────── */
+    /*
+     * The suggest/hover widgets rendered at body level live in their own
+     * .monaco-editor.vs-dark wrapper which does NOT inherit Monaco's inline
+     * --vscode-* custom properties.  Defining them here (in a stylesheet)
+     * makes them cascade into the overflow containers so labels are visible.
+     */
+    .monaco-editor.vs-dark {
+      /* Suggest widget */
+      --vscode-editorSuggestWidget-background:          #252526;
+      --vscode-editorSuggestWidget-foreground:          #d4d4d4;
+      --vscode-editorSuggestWidget-selectedForeground:  #d4d4d4;
+      --vscode-editorSuggestWidget-selectedBackground:  #04395e;
+      --vscode-editorSuggestWidget-highlightForeground: #18a3ff;
+      --vscode-editorSuggestWidget-focusHighlightForeground: #18a3ff;
+      --vscode-editorSuggestWidget-border:              #454545;
+
+      /* List / tree (used inside suggest + picker widgets) */
+      --vscode-list-foreground:                  #d4d4d4;
+      --vscode-list-hoverBackground:             #2a2d2e;
+      --vscode-list-hoverForeground:             #d4d4d4;
+      --vscode-list-focusBackground:             #062f4a;
+      --vscode-list-focusForeground:             #d4d4d4;
+      --vscode-list-activeSelectionBackground:   #04395e;
+      --vscode-list-activeSelectionForeground:   #d4d4d4;
+      --vscode-list-inactiveSelectionBackground: #37373d;
+      --vscode-list-inactiveSelectionForeground: #d4d4d4;
+      --vscode-list-highlightForeground:         #18a3ff;
+
+      /* Hover / parameter hints widget */
+      --vscode-editorHoverWidget-background:          #252526;
+      --vscode-editorHoverWidget-foreground:          #d4d4d4;
+      --vscode-editorHoverWidget-border:              #454545;
+      --vscode-editorHoverWidget-statusBarBackground: #2c2c2d;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── Card 1: textbox with sift-style schema ──────────────────────────── -->
+<div class="card">
+  <h2>Filter query <span style="opacity:.4;font-weight:400;font-size:12px;">— textbox, schema completions</span></h2>
+  <p>
+    Type <code style="color:#4FC1FF">{</code> then <kbd>Ctrl+Space</kbd> to open completions.
+    Schema fields: <code style="color:#4FC1FF">name</code> (string),
+    <code style="color:#4FC1FF">age</code> (number),
+    <code style="color:#4FC1FF">active</code> (boolean).
+  </p>
+  <label>Value</label>
+  <ok-json-input
+    id="filter-input"
+    style="min-height: 80px; display:flex; flex:1;"
+    :schema="filterSchema"
+  ></ok-json-input>
+  <div style="margin-top:8px; display:flex; align-items:center; gap:8px;">
+    <span id="filter-badge" class="badge badge-ok">—</span>
+    <span style="opacity:.4; font-size:11px;">last valid value:</span>
+  </div>
+  <div id="filter-result" class="result">—</div>
+</div>
+
+<!-- ─── Card 2: single-line input mode ──────────────────────────────────── -->
+<div class="card">
+  <h2>Prefix value <span style="opacity:.4;font-weight:400;font-size:12px;">— input mode (no schema)</span></h2>
+  <p>Single-line mode. Press Enter to commit, Shift+Enter to add a newline.</p>
+  <label>Value</label>
+  <ok-json-input
+    id="prefix-input"
+    mode="input"
+    style="width: 280px;"
+  ></ok-json-input>
+  <div id="prefix-result" class="result">—</div>
+</div>
+
+<!-- ─── Card 3: schema with $or / logical operators ─────────────────────── -->
+<div class="card">
+  <h2>Logical query <span style="opacity:.4;font-weight:400;font-size:12px;">— textbox, richer schema</span></h2>
+  <p>
+    Schema exposes <code style="color:#4FC1FF">$and</code>, <code style="color:#4FC1FF">$or</code>, <code style="color:#4FC1FF">$nor</code>
+    at the top level in addition to field names.
+    Try typing <code style="color:#4FC1FF">"$</code> and pressing Ctrl+Space.
+  </p>
+  <label>Value</label>
+  <ok-json-input
+    id="logical-input"
+    style="min-height: 110px; display:flex; flex:1;"
+    :schema="logicalSchema"
+  ></ok-json-input>
+  <div id="logical-result" class="result">—</div>
+</div>
+
+<script type="module">
+  import OK from '@okjs';
+  import okJsonInput from './components/ok-json-input.ok.js';
+
+  // ── bootstrap ok.js ─────────────────────────────────────────────────────
+  const ok = OK({ env: 'dev', crash: { mode: 'debug' } });
+
+  ok.register(okJsonInput);
+
+  // ── schemas ─────────────────────────────────────────────────────────────
+
+  /** Operator sub-schema used for each field */
+  const operatorProps = {
+    $eq:     { description: 'Equals this value exactly' },
+    $ne:     { description: 'Not equal' },
+    $gt:     { description: 'Greater than' },
+    $gte:    { description: 'Greater than or equal' },
+    $lt:     { description: 'Less than' },
+    $lte:    { description: 'Less than or equal' },
+    $in:     { type: 'array',   items: {}, description: 'Value in array  e.g. {"$in":["a","b"]}' },
+    $nin:    { type: 'array',   items: {}, description: 'Value NOT in array' },
+    $exists: { type: 'boolean', enum: [true, false], description: 'Field presence' },
+    $regex:  { type: 'string',  description: 'Regular-expression pattern' },
+  };
+
+  const fieldValue = (desc) => ({
+    description: desc,
+    oneOf: [
+      { description: 'Direct value match' },
+      {
+        type: 'object',
+        description: 'Operator object',
+        properties: operatorProps,
+        additionalProperties: false,
+      },
+    ],
+  });
+
+  /** Schema for Cards 1 — simple 3-field sift filter */
+  const filterSchema = {
+    type: 'object',
+    description: 'Sift-compatible filter query',
+    properties: {
+      name:   fieldValue('"name"  (string)'),
+      age:    fieldValue('"age"   (number)'),
+      active: fieldValue('"active" (boolean)'),
+    },
+    additionalProperties: false,
+  };
+
+  /** Schema for Card 3 — logical operators at the top level */
+  const logicalSchema = {
+    type: 'object',
+    description: 'Sift-compatible filter query (with logical operators)',
+    properties: {
+      name:   fieldValue('"name"  (string)'),
+      age:    fieldValue('"age"   (number)'),
+      active: fieldValue('"active" (boolean)'),
+      $and:   { type: 'array', items: { type: 'object' }, description: 'All conditions must match' },
+      $or:    { type: 'array', items: { type: 'object' }, description: 'At least one condition must match' },
+      $nor:   { type: 'array', items: { type: 'object' }, description: 'No condition must match' },
+    },
+    additionalProperties: false,
+  };
+
+  // ── init ─────────────────────────────────────────────────────────────────
+  await ok.init(document.body, {
+    filterSchema,
+    logicalSchema,
+  });
+
+  // ── wire up change events ────────────────────────────────────────────────
+  function showResult(inputId, resultId, badgeId) {
+    const el     = document.getElementById(inputId);
+    const result = document.getElementById(resultId);
+    const badge  = badgeId ? document.getElementById(badgeId) : null;
+
+    el.addEventListener('edit', e => {
+      const val = e.detail;
+      if (val === undefined) {
+        result.textContent = '— (invalid JSON) —';
+        if (badge) { badge.textContent = 'invalid'; badge.className = 'badge badge-err'; }
+      } else {
+        result.textContent = JSON.stringify(val, null, 2);
+        if (badge) { badge.textContent = 'valid ✓'; badge.className = 'badge badge-ok'; }
+      }
+    });
+
+    el.addEventListener('change', e => {
+      const val = e.detail;
+      result.textContent = '▶ committed: ' + JSON.stringify(val, null, 2);
+    });
+  }
+
+  showResult('filter-input',  'filter-result',  'filter-badge');
+  showResult('prefix-input',  'prefix-result',   null);
+  showResult('logical-input', 'logical-result',  null);
+</script>
+</body>
+</html>
+

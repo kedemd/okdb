@@ -1,0 +1,49 @@
+[
+    { "file": "index.md", "label": "Overview" },
+    { "file": "getting-started.md", "label": "Getting Started" },
+    { "file": "deployment.md", "label": "Roles & Deployment" },
+    {
+        "label": "Core",
+        "children": [
+            { "file": "data-model.md", "label": "Data Model" },
+            { "file": "querying.md", "label": "Querying" },
+            { "file": "indexes.md", "label": "Indexes" },
+            { "file": "transactions.md", "label": "Transactions" },
+            { "file": "change-log.md", "label": "Change Log & Events" }
+        ]
+    },
+    {
+        "label": "Features",
+        "children": [
+            { "file": "sync.md", "label": "Sync" },
+            { "file": "fts.md", "label": "Full-Text Search" },
+            { "file": "embeddings.md", "label": "Embeddings" },
+            { "file": "views.md", "label": "Materialized Views" },
+            { "file": "subscriptions.md", "label": "Live Subscriptions" },
+            { "file": "pipelines.md", "label": "Pipelines" },
+            { "file": "queue.md", "label": "Queue" },
+            { "file": "files.md", "label": "Files" },
+            { "file": "functions.md", "label": "Custom Functions" },
+            { "file": "ttl.md", "label": "TTL (Time-to-Live)" },
+            { "file": "time-machine.md", "label": "Time Machine" }
+        ]
+    },
+    {
+        "label": "Reference",
+        "children": [
+            { "file": "auth-and-sync.md", "label": "Auth & Sync" },
+            { "file": "auth-permissions.md", "label": "Auth Permissions" },
+            { "file": "http-api.md", "label": "HTTP API" },
+            { "file": "http-cluster.md", "label": "HTTP Clustering" },
+            { "file": "process-registry.md", "label": "Process Registry" },
+            { "file": "plugins.md", "label": "Plugins" },
+            { "file": "processors.md", "label": "Processors (modes & registration)" },
+            { "file": "licensing.md", "label": "Licensing" },
+            { "file": "logging.md", "label": "Logging" },
+            { "file": "diagnostics.md", "label": "Diagnostics" },
+            { "file": "migration.md", "label": "Migration" },
+            { "file": "upgrade-2.0.md", "label": "Upgrading to 2.0" },
+            { "file": "upgrade-2.1.md", "label": "Upgrading to 2.1" }
+        ]
+    }
+]

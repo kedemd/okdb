@@ -1,0 +1,1 @@
+import e from"../../engines/parts/engine-lifecycle-actions.ok.js";export default{...e,tag:"embed-lifecycle-bar"};
