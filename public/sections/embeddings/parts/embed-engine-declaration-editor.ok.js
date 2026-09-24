@@ -1,0 +1,1 @@
+import e from"../../engines/parts/engine-declaration-editor.ok.js";export default{...e,tag:"embed-engine-declaration-editor"};

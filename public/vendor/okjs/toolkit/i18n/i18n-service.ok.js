@@ -1,0 +1,1 @@
+import{createI18n as e}from"./ok-i18n.js";var n={tag:"i18n-service",register(n){const t=e({}),a=n.proxy({lang:"en"});n.shared.i18n={core:t,get lang(){return a.lang},set lang(e){a.lang=e,t.lang=e},t:(e,n,r)=>t.t(e,n,{lang:a.lang,...r})},n.enhanceScope(e=>{Object.defineProperty(e,"$t",{get:()=>(n,t,a)=>e.$ok.shared.i18n.t(n,t,a)})})}};export{n as default};

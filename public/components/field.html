@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>field-path-input — test</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "@toolkit/": "../vendor/okjs/toolkit/",
+                "@okjs": "../vendor/okjs/ok.esm.min.js"
+            }
+        }
+    </script>
+    <style>
+        body { background:#0d1117; color:#c9d1d9; font-family:system-ui,sans-serif; padding:32px; }
+        h2   { font-size:13px; text-transform:uppercase; letter-spacing:.08em; opacity:.45; margin:32px 0 10px; }
+        .row { display:flex; align-items:flex-start; gap:16px; margin-bottom:24px; }
+        .col { flex:1; display:flex; flex-direction:column; gap:8px; }
+        .label { font-size:11px; opacity:.5; }
+        .out  { font-size:12px; font-family:monospace; padding:6px 8px; background:#1e2326; border-radius:6px; min-height:28px; color:#4FC1FF; }
+        .chip { display:inline-flex; align-items:center; gap:4px; background:#2a3035; padding:3px 8px; border-radius:4px; font-size:12px; margin:2px; font-family:monospace; }
+        .chip button { background:none; border:none; color:#aaa; cursor:pointer; padding:0 2px; font-size:13px; }
+        .chips { display:flex; flex-wrap:wrap; min-height:28px; align-items:center; gap:2px; }
+        .add-row { display:flex; gap:8px; align-items:center; }
+        .add-row button { white-space:nowrap; }
+        hr { border:none; border-top:1px solid #2a3035; margin:32px 0; }
+    </style>
+</head>
+<body>
+
+<!-- ─── Test 1: basic, no :value, all types ─────────────────────────────── -->
+<h2>1 · Basic — no initial value, all field types</h2>
+<div class="row">
+    <div class="col">
+        <div class="label">field-path-input (strict mode)</div>
+        <field-path-input
+            :items="fields"
+            placeholder="Type to filter…"
+            @change="pick1 = $event.detail"
+        ></field-path-input>
+        <div class="label">Selected value</div>
+        <div class="out">{{ pick1 || '—' }}</div>
+    </div>
+</div>
+
+<!-- ─── Test 2: controlled :value + allow-custom ────────────────────────── -->
+<h2>2 · Controlled + allow-custom</h2>
+<div class="row">
+    <div class="col">
+        <div class="label">field-path-input (allow-custom="true")</div>
+        <field-path-input
+            :value="pick2"
+            :items="fields"
+            allow-custom="true"
+            placeholder="Known or free-text path"
+            @change="pick2 = $event.detail"
+        ></field-path-input>
+        <div class="label">Value (round-trips via :value)</div>
+        <div class="out">{{ pick2 || '—' }}</div>
+        <button @click="pick2 = ''">Clear</button>
+    </div>
+</div>
+
+<!-- ─── Test 3: multi-select (the chips pattern used in the real modals) ── -->
+<h2>3 · Multi-select chips (Index / FTS modal pattern)</h2>
+<div class="col">
+    <div class="add-row">
+        <field-path-input
+            :value="pick3"
+            :items="fields"
+            placeholder="Add a field…"
+            @change="pick3 = $event.detail"
+            style="flex:1"
+        ></field-path-input>
+        <button @click="addChip()" :disabled="!pick3 || chips.includes(pick3)">+ Add</button>
+    </div>
+    <div class="chips">
+        <each :of="chips" let:item="c">
+            <span class="chip">{{ c }} <button @click="removeChip(c)">×</button></span>
+        </each>
+        <span style="font-size:12px; opacity:.3;" :style="chips.length ? 'display:none' : ''">no fields added</span>
+    </div>
+    <div class="label">Chips array</div>
+    <div class="out">{{ JSON.stringify(chips) }}</div>
+</div>
+
+<hr>
+
+<!-- ─── Scoring proof ─────────────────────────────────────────────────────── -->
+<h2>4 · Scoring proof — type "body" → content.body ranks highest</h2>
+<div class="row">
+    <div class="col">
+        <div class="label">Try typing: body, cre, lat, co bo</div>
+        <field-path-input
+            :items="deepFields"
+            placeholder="Test scoring…"
+            @change="pick4 = $event.detail"
+        ></field-path-input>
+        <div class="out">{{ pick4 || '—' }}</div>
+    </div>
+</div>
+
+<script type="module">
+    import fieldPathInput from './field-path-input.ok.js';
+    import { ok } from '../modules/ok.js';
+    ok.register(fieldPathInput);
+
+    ok.init(document.body, {
+        // ── shared items ──────────────────────────────────────────────────────
+        fields: [
+            { path: 'name',          types: ['string'] },
+            { path: 'email',         types: ['string'] },
+            { path: 'city',          types: ['string'] },
+            { path: 'country',       types: ['string'] },
+            { path: 'home',          types: ['geo'],    hint: 'geo' },
+            { path: 'bio',           types: ['string'] },
+            { path: 'interests',     types: ['array'] },
+            { path: 'memberSince',   types: ['string'] },
+            { path: 'checkinsCount', types: ['number'] },
+            { path: 'active',        types: ['boolean'] },
+            { path: 'meta',          types: ['object'] },
+        ],
+
+        // deeper paths for scoring test
+        deepFields: [
+            { path: 'content',         types: ['object'] },
+            { path: 'content.title',   types: ['string'] },
+            { path: 'content.body',    types: ['string'] },
+            { path: 'content.summary', types: ['string'] },
+            { path: 'meta',            types: ['object'] },
+            { path: 'meta.created',    types: ['number'] },
+            { path: 'meta.author',     types: ['string'] },
+            { path: 'location',        types: ['geo'], hint: 'geo' },
+        ],
+
+        // ── state ─────────────────────────────────────────────────────────────
+        pick1: '',
+        pick2: '',
+        pick3: '',
+        pick4: '',
+        chips: [],
+
+        addChip() {
+            const v = this.pick3.trim();
+            if (v && !this.chips.includes(v)) {
+                this.chips.push(v);
+                this.pick3 = '';
+            }
+        },
+        removeChip(c) {
+            const i = this.chips.indexOf(c);
+            if (i >= 0) this.chips.splice(i, 1);
+        },
+    });
+</script>
+</body>
+</html>
+

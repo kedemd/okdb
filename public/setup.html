@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+    <link rel="manifest" href="site.webmanifest">
+    <title>OKDB Setup</title>
+    <script>
+        (function () {
+            try {
+                var saved = localStorage.getItem('okdbTheme');
+                if (saved !== 'dark' && saved !== 'light') {
+                    saved = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+                }
+                if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+            } catch (e) { /* localStorage blocked — default to dark */ }
+        })();
+    </script>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg0:#071018;
+            --bg1:#0d1722;
+            --bg2:#142235;
+            --line:#27415f;
+            --text:#e8f2ff;
+            --muted:#9ab2cc;
+            --accent:#4fc1ff;
+            --accent2:#7ee787;
+        }
+        :root[data-theme='light'] {
+            color-scheme: light;
+            --bg0:#dce8f5;
+            --bg1:#f0f6fc;
+            --bg2:#ffffff;
+            --line:#b0c8e0;
+            --text:#0d1a28;
+            --muted:#3a5870;
+            --accent:#1a7ab8;
+            --accent2:#16a34a;
+        }
+        * { box-sizing:border-box; }
+        /* Author rule for .field/.check sets display, which beats the UA [hidden]
+           rule — so make hidden authoritative for everything on this page. */
+        [hidden] { display:none !important; }
+        body {
+            margin:0;
+            min-height:100vh;
+            font-family: Inter, Segoe UI, Arial, sans-serif;
+            color:var(--text);
+            background: radial-gradient(circle at top, #16304b 0%, var(--bg0) 45%, #05090f 100%);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:24px;
+        }
+        [data-theme='light'] body {
+            background: radial-gradient(circle at top, #c8dff5 0%, var(--bg0) 45%, #e8f2ff 100%);
+        }
+        .shell {
+            width:min(440px, 100%);
+            display:flex;
+            flex-direction:column;
+            gap:0;
+        }
+        .header {
+            margin-bottom:24px;
+            text-align:center;
+        }
+        .eyebrow {
+            display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px;
+            background:rgba(79,193,255,.12); color:var(--accent); font-size:12px; letter-spacing:.08em; text-transform:uppercase;
+            border:1px solid rgba(79,193,255,.18);
+        }
+        h1 { font-size:30px; line-height:1.1; margin:14px 0 6px; }
+        .subtitle { color:var(--muted); font-size:15px; margin:0; }
+        .panel {
+            background:rgba(8,16,26,.86);
+            border:1px solid rgba(79,193,255,.16);
+            border-radius:18px;
+            padding:28px;
+            backdrop-filter: blur(10px);
+            display:flex;
+            flex-direction:column;
+            gap:20px;
+        }
+        .panel-title { font-size:17px; font-weight:700; margin:0; }
+        .panel-desc { font-size:13px; color:var(--muted); margin:0; line-height:1.55; }
+        .stack { display:flex; flex-direction:column; gap:12px; }
+        .field { display:flex; flex-direction:column; gap:6px; }
+        .field label { font-size:12px; color:var(--muted); }
+        .field input {
+            width:100%; background:#0b1420; color:var(--text); border:1px solid rgba(255,255,255,.08);
+            border-radius:12px; padding:12px 14px; outline:none; font-size:14px;
+        }
+        .field input:focus { border-color: rgba(79,193,255,.45); box-shadow:0 0 0 3px rgba(79,193,255,.12); }
+        .button {
+            display:inline-flex; align-items:center; justify-content:center;
+            width:100%; border:none; cursor:pointer; font-family:inherit; font-weight:700; font-size:15px;
+            border-radius:12px; padding:14px 16px; background:linear-gradient(135deg, var(--accent), #8fdcff);
+            color:#04111f; box-shadow:0 10px 30px rgba(79,193,255,.22);
+        }
+        .button:hover { filter:brightness(1.04); }
+        .button.green {
+            background:linear-gradient(135deg, var(--accent2), #a8f0b4);
+            box-shadow:0 10px 30px rgba(126,231,135,.18);
+        }
+        /* Secondary, low-emphasis action (e.g. the "Join a cluster" entry point) */
+        .button.ghost {
+            background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,.12);
+            box-shadow:none; font-weight:600; font-size:14px; padding:12px 16px;
+        }
+        .button.ghost:hover { filter:none; color:var(--text); border-color:rgba(79,193,255,.4); }
+        [data-theme='light'] .button.ghost { border-color:var(--line); }
+        .divider {
+            display:flex; align-items:center; gap:12px; color:var(--muted); font-size:12px;
+            text-transform:uppercase; letter-spacing:.08em;
+        }
+        .divider::before, .divider::after { content:''; flex:1; height:1px; background:rgba(255,255,255,.1); }
+        [data-theme='light'] .divider::before, [data-theme='light'] .divider::after { background:var(--line); }
+        .back {
+            align-self:flex-start; background:none; border:none; cursor:pointer; font-family:inherit;
+            color:var(--muted); font-size:13px; padding:0; margin-bottom:10px;
+        }
+        .back:hover { color:var(--text); }
+        .error {
+            padding:10px 12px; border-radius:10px;
+            background:rgba(248,113,113,.12); border:1px solid rgba(248,113,113,.25); color:#fecaca;
+            font-size:13px;
+        }
+        .success {
+            padding:10px 12px; border-radius:10px;
+            background:rgba(126,231,135,.1); border:1px solid rgba(126,231,135,.25); color:#a8f0b4;
+            font-size:13px;
+        }
+        [data-theme='light'] .panel { background: rgba(255,255,255,.92); border-color: rgba(26,122,184,.2); }
+        [data-theme='light'] .field input { background: var(--bg2); border-color: var(--line); }
+
+        /* Segmented credential toggle */
+        .segmented {
+            display:flex; border:1px solid rgba(255,255,255,.1); border-radius:12px; overflow:hidden;
+        }
+        .segmented button {
+            flex:1; background:transparent; color:var(--muted); border:none; cursor:pointer;
+            font-family:inherit; font-size:13px; font-weight:600; padding:10px 8px; transition:color .15s, background .15s;
+        }
+        .segmented button + button { border-left:1px solid rgba(255,255,255,.08); }
+        .segmented button.seg-active { background:#0b1420; color:var(--text); box-shadow:inset 0 0 0 1px rgba(79,193,255,.35); }
+        [data-theme='light'] .segmented { border-color:var(--line); }
+        [data-theme='light'] .segmented button.seg-active { background:var(--bg2); }
+        .check { display:flex; align-items:flex-start; gap:9px; font-size:13px; color:var(--muted); cursor:pointer; line-height:1.45; }
+        .check input { margin-top:2px; cursor:pointer; accent-color:var(--accent2); }
+        .hint { font-size:12px; color:var(--muted); line-height:1.5; margin:0; }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <header class="header">
+            <div class="eyebrow">OKDB First-Time Setup</div>
+            <h1>Welcome to OKDB</h1>
+            <p class="subtitle">This node has no credentials yet. Create an admin to get started.</p>
+        </header>
+
+        <!-- Create admin (default view) -->
+        <section class="panel" id="createView">
+            <div>
+                <p class="panel-title">Create your first admin</p>
+                <p class="panel-desc">Set up credentials for this node. You'll log in with these after setup.</p>
+            </div>
+            <form id="createForm" class="stack">
+                <div class="field">
+                    <label for="createName">Username</label>
+                    <input id="createName" name="name" value="admin" autocomplete="username" placeholder="admin">
+                </div>
+                <div class="field">
+                    <label for="createPassword">Password</label>
+                    <input id="createPassword" name="password" type="password" autocomplete="new-password" placeholder="••••••••">
+                </div>
+                <div class="field">
+                    <label for="createConfirm">Confirm password</label>
+                    <input id="createConfirm" name="confirm" type="password" autocomplete="new-password" placeholder="••••••••">
+                </div>
+                <div class="field">
+                    <label for="createLabel">Label <span style="color:var(--muted)">(optional)</span></label>
+                    <input id="createLabel" name="label" value="Initial admin" placeholder="Initial admin">
+                </div>
+                <div id="createError" class="error" hidden></div>
+                <button type="submit" class="button">Create admin and continue</button>
+            </form>
+
+            <div class="divider"><span>or</span></div>
+            <button type="button" id="showJoin" class="button ghost">Join an existing cluster</button>
+        </section>
+
+        <!-- Join cluster (revealed on demand) -->
+        <section class="panel" id="joinView" hidden>
+            <div>
+                <button type="button" id="backToCreate" class="back">← Back</button>
+                <p class="panel-title">Join an existing cluster</p>
+                <p class="panel-desc">Connect to a running OKDB node. The credential is used once for the handshake — after that, sync authenticates with Ed25519 keys.</p>
+            </div>
+            <form id="joinForm" class="stack">
+                <div class="field">
+                    <label for="joinAddress">Remote node address</label>
+                    <input id="joinAddress" name="address" placeholder="http://node-a.example.com:8484">
+                </div>
+
+                <div class="field">
+                    <label>Authentication</label>
+                    <div class="segmented" id="joinAuthSeg">
+                        <button type="button" data-method="token" class="seg-active">Token</button>
+                        <button type="button" data-method="login">Login</button>
+                        <button type="button" data-method="none">None</button>
+                    </div>
+                </div>
+
+                <div class="field" data-auth="token">
+                    <label for="joinToken">Cluster sync token</label>
+                    <input id="joinToken" name="token" type="password" placeholder="Bearer token from the cluster admin">
+                </div>
+
+                <div class="field" data-auth="login" hidden>
+                    <label for="joinUsername">Username</label>
+                    <input id="joinUsername" name="username" autocomplete="username" placeholder="Username on the remote node">
+                    <label for="joinPassword" style="margin-top:6px;">Password</label>
+                    <input id="joinPassword" name="password" type="password" autocomplete="current-password" placeholder="••••••••">
+                </div>
+
+                <div class="field" data-auth="none" hidden>
+                    <p class="hint">No credential is sent. This only works when the remote node is running in open mode.</p>
+                </div>
+
+                <label class="check">
+                    <input type="checkbox" id="joinDataLink" checked>
+                    <span>Sync data immediately <span style="opacity:.6">— unchecked links topology only</span></span>
+                </label>
+
+                <div id="joinError" class="error" hidden></div>
+                <button type="submit" class="button green">Join cluster</button>
+            </form>
+        </section>
+    </main>
+
+    <script type="module" src="setup-app.js"></script>
+</body>
+</html>
