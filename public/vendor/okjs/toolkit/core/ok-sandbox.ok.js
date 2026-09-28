@@ -1,0 +1,1 @@
+var e={tag:"ok-sandbox",init(e){const o=e.$ok.createNodes(e.$cache.cmp.templates.default),t=e.$el.attachShadow({mode:"open"}),a=e.$ok.OK({env:"sandbox",head:t,body:t});a.componentRegistry.cache=e.$ok.componentRegistry.cache,t.append(...o),t.$scope=a.scope(t,{$parent:null,$context:e.$context,$vars:e.$vars}),a.init(t)}};export{e as default};
