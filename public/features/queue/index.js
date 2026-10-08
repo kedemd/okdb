@@ -1,0 +1,1 @@
+export default{sections:[{id:"queue",label:"Queue",icon:"⇶",order:40,component:"./queue-section.ok.html"}]};
