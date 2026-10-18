@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- No <base>: every relative URL here already resolves against /admin/, and a base
+         would make fragment links (href="#/db", $ok.shell.href(), SVG <use href="#…">)
+         point at /admin/#/… — another document, i.e. a full page reload. -->
+    <meta charset="UTF-8">
+    <title>OKDB</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/png" href="favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+    <link rel="manifest" href="site.webmanifest">
+    <script type="importmap">
+        {
+            "imports": {
+                "@toolkit/": "./vendor/okjs/toolkit/",
+                "@okjs": "./vendor/okjs/ok.esm.min.js",
+                "@admin/": "./",
+                "@features/": "./features/"
+            }
+        }
+    </script>
+</head>
+<body>
+<!-- $router / $route stay available to every section as $vars (see shell/shell-store.js for
+     the shell's own routing API, $ok.shell). -->
+<hash-router let:router="$router">
+    <var :$route="$router.match('./:section/*') || {params: { section: 'db' }}">
+        <admin-shell></admin-shell>
+    </var>
+</hash-router>
+
+<theme-toggle></theme-toggle>
+
+<script type="module" src="admin-app.js"></script>
+</body>
+</html>
