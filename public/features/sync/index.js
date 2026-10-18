@@ -1,0 +1,1 @@
+export default{slots:{"system.page":[{id:"sync",label:"Sync",icon:"⇄",order:50,group:"operate",component:"./sync-panel.ok.js"}]}};

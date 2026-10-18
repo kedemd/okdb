@@ -1,0 +1,609 @@
+# Custom Functions
+
+OKDB custom functions let you store and execute JavaScript routines inside the database with a controlled runtime.
+
+They are designed for:
+
+- reusable env-local business logic
+- cross-env orchestration (via `unsafe: true`)
+- stable HTTP entry points
+- MCP-accessible orchestration routines
+
+Custom functions are **stored**, **versioned**, **validated**, **audited**, and executed in a **sandbox**: an embedded JavaScript engine inside okdb's native core, separate from your Node.js runtime.
+
+---
+
+## Mental model
+
+Functions run **inside OKDB** with direct access to a live database facade.
+
+Recommended starting flow:
+
+1. fetch a canonical starter with `okdb_function` `action: "get_template"`
+2. use the required shape `async (ctx) => { ... }`
+3. use `ctx.env` for normal env-scoped work
+4. use `ctx.env.txn(...)` for batched writes such as seeding 1000 records
+5. only enable `unsafe: true` when you intentionally need privileged cross-env access through `ctx.okdb`
+
+For bulk inserts specifically, the `seed` template is the best starting point.
+
+That means a function should **perform writes itself**:
+
+```js
+async (ctx) => {
+    await ctx.env.put('products', 'p1', { name: 'Widget' });
+    return { ok: true };
+};
+```
+
+It should **not** return a description of work for OKDB to execute later.
+
+This is **incorrect**:
+
+```js
+(ctx) => ({
+    operations: [{ action: 'put', type: 'products', key: 'p1', value: { name: 'Widget' } }],
+});
+```
+
+If you want batched atomic writes, use `txn(...)`:
+
+```js
+async (ctx) => {
+    await ctx.env.txn((txn) => {
+        txn.create('products', 'p1', { name: 'Widget' });
+        txn.create('products', 'p2', { name: 'Gadget' });
+    });
+    return { inserted: 2 };
+};
+```
+
+---
+
+## Every function belongs to an environment
+
+All functions live in an env (including those created via `db.functions` — those are stored in the `~system` env).
+
+Every function receives `ctx.env` pointing to its home environment.
+
+For cross-env or privileged operations, mark the function `unsafe: true` to additionally receive `ctx.okdb`.
+
+Most function code should stay on `ctx.env`, not `ctx.okdb`.
+
+---
+
+## Script contract
+
+Stored scripts must be a single function expression:
+
+```js
+(ctx) => {};
+async (ctx) => {};
+```
+
+Do **not** destructure the argument like this:
+
+```js
+async ({ ctx }) => {};
+```
+
+The runtime passes a single argument named `ctx`, so the canonical shape is always `async (ctx) => { ... }`.
+
+The runtime rejects scripts that use unsupported forms or forbidden symbols.
+
+### Forbidden
+
+The runtime rejects (`FUNCTION_SCRIPT_FORBIDDEN_SYMBOL`) scripts that reference:
+
+- `require`
+- `import`
+- `console`
+- `module`
+- `exports`
+- `process`
+- `child_process`
+- `worker_threads`
+
+Use `ctx.log(...)` instead of `console`. Referencing `ctx.okdb` in a function that is not
+`unsafe: true` is rejected with `FUNCTION_SCRIPT_RESTRICTED_CTX_PROP`.
+
+### Globals
+
+The sandbox is not Node.js: there is no `require`, no `Buffer`, no `process`, no file system, and
+no code generation from strings (`eval` and `new Function(...)` throw `EvalError`). Besides the
+standard language built-ins (`Object`, `Array`, `Map`, `Set`, `Promise`, `JSON`, `Math`, `Date`,
+`RegExp`, typed arrays, `BigInt`, `Proxy`, `Reflect`, ...) a function sees:
+
+- `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval`, `queueMicrotask`
+- `URL`, `URLSearchParams`, `TextEncoder`, `TextDecoder`
+- `AbortController`, `AbortSignal`, `structuredClone`
+- `crypto` (`crypto.randomUUID()`, `crypto.getRandomValues()`, `crypto.subtle.digest()`)
+- `fetch` — restricted, see [Network access](#network-access-fetch)
+
+---
+
+## Runtime model
+
+A function runs on **the process it was asked on**. Its code executes in an embedded JavaScript
+engine (QuickJS) on a **sandbox thread** inside okdb's native core — not in Node's V8 and not with
+access to your Node.js globals. Each running invocation has its own sandbox thread; threads are
+started on first use and reaped after `OKDB_FN_SANDBOX_IDLE_MS` (default 30 000) idle. At most
+`OKDB_FN_SANDBOX_CONCURRENCY` (default 4) invocations run at once per process; further ones wait.
+A wedged or runaway function is interrupted on its own thread without affecting other runs.
+
+The function's `ctx.env` / `ctx.okdb` calls are executed by the okdb instance that started the
+run, on its thread. `functions.run()` is asynchronous: **the Node.js event loop keeps running
+while the function executes** on its sandbox thread (timers and I/O callbacks fire as usual), and
+each `ctx.env` / `ctx.okdb` call is served on the loop as it arrives. `functions.preview()` and
+functions run inline by a sync processor are still served synchronously. Durable, run-eventually
+invocation is a queue job (for example a queue-worker engine, see [Pipelines](./pipelines.md)).
+
+Memory is bounded twice. Each run may grow the sandbox heap by at most the stored function's
+`runtime.memoryMb` (default 32, or the `functions.memoryMb` constructor option); a run over it
+fails with `FUNCTION_OOM` (`function sandbox out of memory (<n>MB heap cap)`) and the run record
+has status `error`, while other runs are unaffected. Each sandbox thread's heap is also capped by
+the `functions.memoryMb` constructor option (default 256 MB, minimum 32). Scripts are validated
+and compile-checked before storage, and every run is written to the run ledger (`listRuns` /
+`getRun`).
+
+### Timeouts
+
+- **Run deadline** — `runtime.timeoutMs` on the stored function (default 5 000 ms) aborts
+  `ctx.signal`; a run still going after a further grace period (`OKDB_FN_SANDBOX_GRACE_MS`,
+  default 1 500 ms) is interrupted and fails with `FUNCTION_TIMEOUT`. A single call can override it with
+  `functions.run(name, payload, { timeoutMs })`; the value must be a positive finite number
+  (`FUNCTION_INVALID_TIMEOUT` otherwise) and is capped at `OKDB_FN_MAX_TIMEOUT_MS` (default
+  600 000 ms), since a running call holds a sandbox slot for its whole deadline.
+- **Compile bound** — evaluating the stored source to obtain the function (at create/update and
+  in the sandbox) is bounded by a wall-clock watchdog, `OKDB_FN_COMPILE_TIMEOUT_MS` (default
+  1 000 ms). A valid source is a bare arrow expression and evaluates in well under a millisecond;
+  the bound only stops a source that smuggles top-level work.
+
+The `functions` constructor option sets the defaults for new functions and the sandbox:
+`new OKDB(path, { functions: { timeoutMs, memoryMb, allowFetch, maxCodeSizeBytes } })`.
+
+### Network access (`fetch`)
+
+`fetch` inside a function is off unless the stored function's `runtime.allowedFetchDomains` permits the
+host: a list of exact hostnames, or `'*'` for any public host (`runtime.allowFetch: false` removes `fetch`
+altogether). Every hop is checked — the first URL **and each redirect**:
+
+- **Scheme** — only `http:` and `https:` (`FETCH_NOT_ALLOWED`).
+- **Allow-list** — the hostname must be listed, or the list must be `'*'` (`FETCH_NOT_ALLOWED`).
+- **Private addresses** — a host that is, or resolves to, loopback, RFC 1918, link-local (including the
+  `169.254.169.254` metadata service), CGNAT, ULA, multicast or reserved space is refused
+  (`FETCH_PRIVATE_ADDRESS`), even under `'*'`. A hostname listed **explicitly** is exempt: listing it is
+  vouching for it. `OKDB_FN_FETCH_ALLOW_PRIVATE=1` turns the block off for the whole process.
+
+Authorization, cookie and proxy-authorization headers are dropped when a redirect leaves the origin.
+At most `OKDB_FN_FETCH_MAX_INFLIGHT` (default 32) sandbox fetches run at once per process, and a
+response body is capped at `OKDB_FN_FETCH_MAX_BYTES` (default 32 MiB).
+
+<!-- not-runnable: calls a host on the network -->
+
+```js
+await env.functions.create({
+    name: 'callBilling',
+    source: 'async (ctx) => (await fetch("http://billing.internal/health")).status',
+    runtime: { allowedFetchDomains: ['billing.internal'] }, // listed explicitly: may be a LAN address
+});
+```
+
+> **Changed in 2.7:** before 2.7 only the first URL was checked, so an allowed host could redirect a
+> function anywhere, and `'*'` reached localhost and the LAN. A function that called a local service
+> through `'*'` must now list that host.
+
+> **Changed in 3.0:** functions run in the native core's embedded engine instead of a Node.js
+> `worker_thread`. The script contract, `ctx` API, globals, fetch rules and error codes are the
+> same. The 2.x durable `~fn:requests` / `~fn:responses` dispatch is gone; use a queue job for
+> run-eventually work.
+
+---
+
+## Available runtime context
+
+Every function receives:
+
+- `ctx.payload` — caller-supplied input
+- `ctx.info` — run metadata (function name, env, version, scope, run ID)
+- `ctx.signal` — AbortSignal for timeout handling
+- `ctx.log` — structured logger (see [Logging](#logging))
+- `ctx.env` — live facade for the function's environment
+- `ctx.job` — queue job context _(only when triggered by a queue-worker engine)_
+- `ctx.processor` — processor trigger context _(only when triggered by a processor engine)_
+- `ctx.materializer` — materializer trigger context _(only when triggered by a materializer engine)_
+
+### `ctx.job` (queue-worker engines only)
+
+When a function is invoked by a queue-worker engine, `ctx.job` provides
+the queue job metadata and helpers:
+
+- `ctx.job.id` — the job ID
+- `ctx.job.type` — the job type
+- `ctx.job.tries` — current attempt number
+- `ctx.job.created` — creation timestamp
+- `ctx.job.tags` — job tags (array or null)
+- `ctx.job.priority` — job priority
+- `ctx.job.bucket` — token bucket ID (or null)
+- `ctx.job.cron` — cron expression (or null)
+- `ctx.job.heartbeat()` — keep the job alive (fire-and-forget)
+- `ctx.job.markProgress(message)` — report progress (fire-and-forget)
+
+`ctx.job` is `undefined` for functions triggered via HTTP, SDK, or processor engines.
+
+### `ctx.processor` (processor engines only)
+
+When a function is invoked by a processor engine, `ctx.payload` is the batch of
+changes (an array of `{ key, value, action, clock }` objects) and `ctx.processor`
+provides the trigger metadata:
+
+- `ctx.processor.mode` — `"snapshot"` (initial backfill) or `"live"` (ongoing)
+- `ctx.processor.sourceType` — the type whose change-log is being consumed
+- `ctx.processor.sourceEnv` — the environment the source type lives in
+- `ctx.processor.processor` — the processor registration ID
+- `ctx.processor.engineKey` — the engine key
+- `ctx.processor.cursorKey` — the cursor key used to track progress
+
+`ctx.processor` is `undefined` for functions triggered via HTTP, SDK, or queue-worker engines.
+
+Example:
+
+```js
+async (ctx) => {
+    // ctx.payload = array of changes
+    // ctx.processor = trigger metadata
+    await ctx.env.ensureType('article_projection');
+    for (const change of ctx.payload) {
+        if (change.action === 'put') {
+            await ctx.env.put('article_projection', change.key, {
+                title: change.value.title,
+                mode: ctx.processor.mode,
+                sourceEnv: ctx.processor.sourceEnv,
+            });
+        }
+    }
+    return { processed: ctx.payload.length };
+};
+```
+
+### `ctx.materializer` (materializer engines only)
+
+When a function is invoked by a materializer engine, `ctx.payload` is the batch of
+changes (same shape as processor) and `ctx.materializer` provides the trigger metadata.
+The function must **return an ops array** — the engine applies those ops to the target type.
+The function must **not** write directly via `ctx.env`.
+
+- `ctx.materializer.mode` — `"build"` (backfill / replay) or `"live"` (ongoing consumption)
+- `ctx.materializer.sourceType` — the source type being consumed
+- `ctx.materializer.targetType` — the target type being maintained
+- `ctx.materializer.sourceEnv` — the environment the source type lives in
+- `ctx.materializer.targetEnv` — the environment the target type lives in
+- `ctx.materializer.engineKey` — the engine key
+- `ctx.materializer.cursorKey` — the cursor key used to track progress
+
+`ctx.materializer` is `undefined` for functions triggered via HTTP, SDK, queue-worker, or processor engines.
+
+The returned ops array shape:
+
+```text
+[
+    { action: 'put',    key: 'some-key', value: { ... } },
+    { action: 'remove', key: 'other-key' },
+]
+```
+
+Example:
+
+```js
+async (ctx) => {
+    // ctx.payload    = changes[]
+    // ctx.materializer = trigger metadata
+    const ops = [];
+    for (const change of ctx.payload) {
+        if (change.action === 'put') {
+            const doc = change.value ?? change.newValue;
+            if (!doc) continue;
+
+            ops.push({
+                action: 'put',
+                key: change.key,
+                value: {
+                    total: doc.total,
+                    customerId: doc.customerId,
+                    updatedAt: Date.now(),
+                    sourceEnv: ctx.materializer.sourceEnv,
+                },
+            });
+        }
+        if (change.action === 'remove') {
+            ops.push({ action: 'remove', key: change.key });
+        }
+    }
+    return ops;
+};
+```
+
+Change record notes:
+
+- `change.value` is the normalized source document for `put` changes and is the preferred field to read.
+- During snapshot bootstrap, `change.clock` is `null` because there is no original changelog clock for the synthetic snapshot row.
+- `change.newValue` / `change.oldValue` may still be present for low-level compatibility, but materializer functions should prefer `change.value`.
+
+`ctx.env` exposes live env methods such as:
+
+- CRUD: `put`, `update`, `patch`, `create`, `remove`, `get`, `query`, ...
+- schema/index helpers: `registerType`, `ensureType`, `registerIndex`, ...
+- `transaction(options)` — low-level transaction object
+- `txn(workOrOps, options?)` — convenience write-focused transaction helper
+- `queue` — queue feature for this env
+- `files` — files feature for this env: `upload`, `stream`, `read`, `remove`, `get`, `listPath`. `read(id)` resolves the whole blob as a Buffer (rejects with `status: 404` for an unknown id). A function's return value is stored as JSON, so convert bytes before returning them — e.g. `buf.toString('utf8')` or `buf.toString('base64')`.
+
+Example:
+
+```js
+async (ctx) => {
+    ctx.log('counting records', { env: ctx.env.name });
+    return {
+        env: ctx.env.name,
+        count: ctx.env.getCount('events'),
+    };
+};
+```
+
+### `ctx.env.txn(...)`
+
+`txn(...)` is a **write-batch helper**, not a full read-your-own-writes transaction view.
+
+Preferred callback form (inside a function body):
+
+```js
+async (ctx) => {
+    await ctx.env.txn((txn) => {
+        txn.create('events', 'e1', { kind: 'view' });
+        txn.create('events', 'e2', { kind: 'click' });
+    });
+};
+```
+
+Also supported: ops arrays
+
+```js
+async (ctx) => {
+    await ctx.env.txn([
+        { action: 'create', type: 'events', key: 'e1', value: { kind: 'view' } },
+        ['create', 'events', 'e2', { kind: 'click' }],
+    ]);
+};
+```
+
+The `txn` object intentionally exposes **write methods only**:
+
+- `put`
+- `update`
+- `patch`
+- `create`
+- `remove`
+- `commit`
+- `rollback`
+
+For advanced callers, `txn.read` / `txn.raw` expose the underlying transaction object,
+including committed-state reads such as `get()` and `query()`.
+
+Important: queued writes are **not** visible to `txn.read` reads before commit.
+`txn(...)` guarantees atomic commit/rollback of writes, but it does **not** provide
+an in-memory overlay or transactional read-your-own-writes view.
+
+---
+
+## Unsafe functions
+
+By default a function can only access its own environment. Mark a function `unsafe: true` to additionally receive `ctx.okdb` — a privileged root facade. The name `unsafe` reflects the consequence: these functions can reach any env.
+
+```js
+await okdb.createEnvironment('analytics');
+
+await okdb.env('default').functions.create({
+    name: 'copySummary',
+    unsafe: true,
+    source: `async (ctx) => {
+    const src = ctx.okdb.env('default');
+    const dst = ctx.okdb.env('analytics');
+    const count = src.getCount('events');
+    await dst.put('summaries', 'latest', { count });
+    return { count };
+  }`,
+});
+```
+
+`ctx.okdb` exposes root-level `env(name)` and a root-scoped `txn(...)`:
+
+```js
+async (ctx) => {
+    await ctx.okdb.txn([
+        { action: 'create', type: 'users', key: 'u1', value: { name: 'Ada' } },
+        { action: 'create', type: 'users', key: 'u2', value: { name: 'Grace' } },
+    ]);
+    return { count: ctx.okdb.getCount('users') };
+};
+```
+
+Use `unsafe: true` only when cross-env access or root-level writes are genuinely required.
+
+---
+
+## Logging
+
+Use `ctx.log(...)` for structured function logs. All log levels are available:
+
+```js
+(ctx) => {
+    ctx.log('starting run', { function: ctx.info.functionName });
+    ctx.log.info('doing work');
+    ctx.log.warn('slow path');
+    ctx.log.error('something broke', { code: 'E42' });
+    return { ok: true };
+};
+```
+
+Every entry emitted from a function is automatically stamped with run identity in the `meta` field:
+
+| `meta` field    | Value                                                                 |
+| --------------- | --------------------------------------------------------------------- |
+| `meta.feature`  | `'functions'`                                                         |
+| `meta.env`      | The environment name                                                  |
+| `meta.fn`       | The function name                                                     |
+| `meta.runId`    | Unique ID for this invocation                                         |
+| `meta.runnerId` | Executor id (e.g. `'sandbox-12345'` — the pid of the running process) |
+
+The second argument to any log call becomes the `context` field in the log entry — this is the user-provided data visible in the Admin UI function log panel.
+
+Function logs are suppressed from the console (they are stored in the run record and displayed in the Admin UI). See [Logging](logging.md) for the full entry shape and consumer APIs.
+
+---
+
+## JavaScript API
+
+```js
+const env = await okdb.createEnvironment('analytics');
+await env.registerType('events');
+
+await env.functions.create({
+    name: 'countEvents',
+    source: '(ctx) => ({ env: ctx.env.name, count: ctx.env.getCount("events") })',
+});
+
+const run = await env.functions.run('countEvents');
+console.log(run.status, run.result.value);
+```
+
+For unsafe cross-env functions:
+
+<!-- continues -->
+
+```js
+await okdb.env('default').functions.create({
+    name: 'crossEnvCount',
+    unsafe: true,
+    source: '(ctx) => ({ analytics: ctx.okdb.env("analytics").getCount("events") })',
+});
+
+const run2 = await okdb.env('default').functions.run('crossEnvCount');
+console.log(run2.result.value);
+```
+
+Other methods (all on `env.functions` / `db.functions`): `list()`, `get(name)`,
+`update(name, patch)`, `remove(name)`, `preview(definition, payload)` (run an unsaved definition;
+`definition` needs a `name` and `source`), `listRuns({ functionName })` and `getRun(runId)`.
+`run(name, payload, { timeoutMs, signal })` resolves to the run record (`status`, `result.value`,
+`logs`, `execution`, …); a failed run rejects with the error, its run record attached as
+`err.details.runRecord`.
+
+<!-- continues -->
+
+```js
+const draft = await env.functions.preview(
+    { name: 'draft', source: '(ctx) => ({ doubled: ctx.payload.n * 2 })' },
+    { n: 21 },
+);
+console.log(draft.result.value); // { doubled: 42 }
+
+const runs = await env.functions.listRuns({ functionName: 'countEvents' });
+console.log(runs.length);
+```
+
+---
+
+## HTTP API
+
+All function routes are env-scoped. The `:env` parameter defaults to `default` when omitted.
+
+- `GET /api[/env/:env]/functions`
+- `POST /api[/env/:env]/functions`
+- `GET /api[/env/:env]/functions/:name`
+- `PUT /api[/env/:env]/functions/:name`
+- `DELETE /api[/env/:env]/functions/:name`
+- `POST /api[/env/:env]/functions/:name/run`
+- `POST /api[/env/:env]/functions/preview`
+- `GET /api[/env/:env]/functions/:name/runs`
+- `GET /api[/env/:env]/functions/:name/runs/:runId`
+
+### MCP note
+
+Function execution is exposed via the grouped `okdb_function_run` MCP tool.
+Use `action: "run"` for stored functions and `action: "preview"` for unsaved drafts.
+
+Example preview call:
+
+```json
+{
+    "name": "okdb_function_run",
+    "arguments": {
+        "action": "preview",
+        "env": "default",
+        "source": "(ctx) => ({ ok: true, env: ctx.env.name })",
+        "payload": { "sample": true }
+    }
+}
+```
+
+There is no separate dotted MCP method such as `okdb_function_run.preview`.
+
+Example — create an unsafe function and run it:
+
+```http
+POST /api/env/analytics/functions
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "syncSummary",
+  "unsafe": true,
+  "source": "(ctx) => ({ count: ctx.okdb.env('default').getCount('users') })"
+}
+```
+
+```http
+POST /api/env/analytics/functions/syncSummary/run
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "payload": { "sample": true } }
+```
+
+---
+
+## Validation errors
+
+Common error codes:
+
+- `FUNCTION_SCRIPT_REQUIRED`
+- `FUNCTION_SCRIPT_TOO_LARGE`
+- `FUNCTION_SCRIPT_INVALID_SHAPE`
+- `FUNCTION_SCRIPT_FORBIDDEN_SYMBOL`
+- `FUNCTION_SCRIPT_COMPILE_FAILED`
+- `FUNCTION_SCRIPT_RESTRICTED_CTX_PROP`
+- `FUNCTION_INVALID_TIMEOUT`
+- `FUNCTION_TIMEOUT`
+- `FUNCTION_OOM`
+- `FUNCTION_CANCELLED`
+
+---
+
+## Current limitations
+
+Current implementation intentionally does **not** yet include:
+
+- precise per-script CPU quotas
+- arbitrary module imports
+- direct console access
+- transactional read-your-own-writes overlays inside `txn(...)`
+- Node.js APIs (`Buffer`, `fs`, `process`, ...) — the sandbox is not Node.js
+
+---
+
+## See also
+
+- [HTTP API](./http-api.md)
+- [Queue](./queue.md)
+- [Files](./files.md)
+- [Plugins](./plugins.md)
