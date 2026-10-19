@@ -1,0 +1,1 @@
+import*as e from"./reactive-sync.js";import{createReactiveSync as r}from"./reactive-sync.js";var a={tag:"reactive-sync-service",register(a){a.shared.sync={...e,createReactiveSync:(e,c)=>r(e,{OKProxy:a.OK.OKProxy,...c})}}};export{a as default};
