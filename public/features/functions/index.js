@@ -1,0 +1,1 @@
+export default{sections:[{id:"functions",label:"Functions",icon:"ƒ",order:50,component:"./functions-section.ok.html"}],stores:{functions:"./functions-store.js"}};
