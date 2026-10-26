@@ -1,0 +1,40 @@
+{
+  "name": "@kedem/okdb",
+  "version": "3.1.2",
+  "description": "A fast, type-oriented database — strong consistency and rich indexing at the core, with sync, vector embeddings, full-text search, and AI tooling built in. Designed for the AI era.",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "index.js",
+  "types": "./types/index.d.ts",
+  "bin": {
+    "okdb": "./bin/okdb"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "index.js",
+    "okdb-native.js",
+    "native-loader.js",
+    "native-loader.d.ts",
+    "bin/okdb",
+    "native/",
+    "public/",
+    "docs/",
+    "types/",
+    "keys/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "banner.jpg"
+  ],
+  "dependencies": {
+    "msgpackr": "^1.12.1",
+    "sift": "^17.1.3"
+  }
+}
