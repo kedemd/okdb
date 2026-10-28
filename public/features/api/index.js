@@ -1,0 +1,1 @@
+export default{slots:{"system.page":[{id:"api",label:"API",icon:"⌁",order:80,group:"reference",component:"./api-panel.ok.js"}]}};
