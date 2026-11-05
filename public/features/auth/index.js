@@ -1,0 +1,1 @@
+export default{slots:{"system.page":[{id:"auth",label:"Auth",icon:"🔐",order:60,group:"operate",component:"./auth-panel.ok.js"}]}};
