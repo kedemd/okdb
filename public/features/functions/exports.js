@@ -1,0 +1,1 @@
+export{default as functionModal}from"./modals/function-modal.ok.js";
