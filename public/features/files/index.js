@@ -1,0 +1,1 @@
+export default{sections:[{id:"files",label:"Files",icon:"⬚",order:30,component:"./files-section.ok.html"}]};

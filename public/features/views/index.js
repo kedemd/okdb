@@ -1,0 +1,1 @@
+export default{sections:[{id:"views",label:"Views",icon:"⊞",order:60,component:"./views-section.ok.html"}],stores:{views:"./views-store.js"}};
